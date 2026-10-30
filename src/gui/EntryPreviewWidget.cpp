@@ -29,6 +29,8 @@
 #include "keeshare/KeeShareSettings.h"
 
 #include <QAbstractTextDocumentLayout>
+#include <QGridLayout>
+#include <QHeaderView>
 #include <QLabel>
 #include <QScrollArea>
 #include <QScrollBar>
@@ -92,6 +94,11 @@ EntryPreviewWidget::EntryPreviewWidget(QWidget* parent)
         if (userData.isValid()) {
             emit copyTextRequested(userData.toString());
         }
+    });
+
+    // Revealing a protected attribute can change the row height
+    connect(m_ui->entryAttributesTable->verticalHeader(), &QHeaderView::sectionResized, this, [this] {
+        fitAttributesTableToContents();
     });
 
     connect(config(), &Config::changed, this, [this](Config::ConfigKey key) {
@@ -482,6 +489,7 @@ void EntryPreviewWidget::updateEntryAdvancedTab()
     m_ui->entryAttributesTable->horizontalHeader()->setStretchLastSection(true);
     m_ui->entryAttributesTable->resizeColumnsToContents();
     m_ui->entryAttributesTable->resizeRowsToContents();
+    fitAttributesTableToContents();
     m_ui->entryAttachmentsWidget->linkAttachments(m_currentEntry->attachments());
 }
 
@@ -711,11 +719,96 @@ void EntryPreviewWidget::fitTextEditsToContents(QWidget* page, bool enabled)
     }
 }
 
+QLayoutItem* EntryPreviewWidget::gridItem(QGridLayout* grid, const QObject* object)
+{
+    for (int i = 0; i < grid->count(); ++i) {
+        auto* item = grid->itemAt(i);
+        if (item->widget() == object || item->layout() == object) {
+            return item;
+        }
+    }
+    Q_ASSERT(false);
+    return nullptr;
+}
+
+// Moves the given grid items to their target positions and returns their previous positions
+QList<EntryPreviewWidget::GridItemPosition> EntryPreviewWidget::moveGridItems(QGridLayout* grid,
+                                                                              const QList<GridItemPosition>& targets)
+{
+    QList<GridItemPosition> previous;
+    for (const auto& target : targets) {
+        const int index = grid->indexOf(target.item);
+        GridItemPosition position{target.item, 0, 0, 0, 0};
+        grid->getItemPosition(index, &position.row, &position.column, &position.rowSpan, &position.columnSpan);
+        previous.append(position);
+        grid->takeAt(index);
+    }
+
+    for (const auto& target : targets) {
+        if (auto* layout = target.item->layout()) {
+            grid->addLayout(layout, target.row, target.column, target.rowSpan, target.columnSpan, layout->alignment());
+        } else {
+            grid->addItem(
+                target.item, target.row, target.column, target.rowSpan, target.columnSpan, target.item->alignment());
+        }
+    }
+    return previous;
+}
+
+void EntryPreviewWidget::setEntryListLayout(bool enabled)
+{
+    // In sections mode the right hand column of the General and Advanced pages is moved below the left one
+    auto* general = qobject_cast<QGridLayout*>(m_ui->entryGeneralWidget->layout());
+    auto* advanced = qobject_cast<QGridLayout*>(m_ui->entryAdvancedTab->layout());
+    Q_ASSERT(general && advanced);
+
+    if (enabled && m_generalGridRestore.isEmpty()) {
+        m_generalGridRestore = moveGridItems(general,
+                                             {{gridItem(general, m_ui->entryUrlTitleLabel), 2, 0, 1, 1},
+                                              {gridItem(general, m_ui->entryUrlLabel), 2, 1, 1, 2},
+                                              {gridItem(general, m_ui->entryExpirationTitleLabel), 3, 0, 1, 1},
+                                              {gridItem(general, m_ui->entryExpirationLabel), 3, 1, 1, 2},
+                                              {gridItem(general, m_ui->entryTagsTitleLabel), 4, 0, 1, 1},
+                                              {gridItem(general, m_ui->entryTagsList), 4, 1, 1, 5},
+                                              {gridItem(general, m_ui->entryNotesTitleLabel), 5, 0, 1, 1},
+                                              {gridItem(general, m_ui->horizontalLayout_3), 5, 1, 1, 5}});
+        general->setRowStretch(3, 0);
+        general->setRowStretch(5, 1);
+        m_advancedGridRestore = moveGridItems(advanced,
+                                              {{gridItem(advanced, m_ui->attachmentsTitleLabel), 2, 0, 1, 1},
+                                               {gridItem(advanced, m_ui->entryAttachmentsWidget), 3, 0, 1, 1}});
+        fitAttributesTableToContents();
+    } else if (!enabled && !m_generalGridRestore.isEmpty()) {
+        moveGridItems(general, m_generalGridRestore);
+        m_generalGridRestore.clear();
+        general->setRowStretch(5, 0);
+        general->setRowStretch(3, 1);
+        moveGridItems(advanced, m_advancedGridRestore);
+        m_advancedGridRestore.clear();
+        m_ui->entryAttributesTable->setMinimumHeight(0);
+        m_ui->entryAttributesTable->setMaximumHeight(QWIDGETSIZE_MAX);
+    }
+}
+
+void EntryPreviewWidget::fitAttributesTableToContents()
+{
+    if (!m_entrySections.active) {
+        return;
+    }
+    auto* table = m_ui->entryAttributesTable;
+    int height = table->verticalHeader()->length() + 2 * table->frameWidth();
+    if (table->horizontalHeader()->isVisible()) {
+        height += table->horizontalHeader()->height();
+    }
+    table->setFixedHeight(height);
+}
+
 void EntryPreviewWidget::applySectionsMode()
 {
     const bool enabled = config()->get(Config::GUI_PreviewShowSections).toBool();
     setSectionsMode(m_entrySections, enabled);
     setSectionsMode(m_groupSections, enabled);
+    setEntryListLayout(enabled);
 }
 
 QString EntryPreviewWidget::hierarchy(const Group* group, const QString& title)

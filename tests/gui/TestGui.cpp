@@ -22,6 +22,8 @@
 #include <QCheckBox>
 #include <QClipboard>
 #include <QDialog>
+#include <QGridLayout>
+#include <QHeaderView>
 #include <QListWidget>
 #include <QMenu>
 #include <QMenuBar>
@@ -2464,6 +2466,42 @@ void TestGui::testEntryPreviewSections()
     QTRY_VERIFY(!autotypeHeading->isEnabled());
     QVERIFY(!autotype->isVisible());
 
+    // Sections show the fields as a single list: right hand column moves below the left one
+    auto gridPosition = [](QWidget* widget) {
+        auto* grid = qobject_cast<QGridLayout*>(widget->parentWidget()->layout());
+        int row, column, rowSpan, columnSpan;
+        grid->getItemPosition(grid->indexOf(widget), &row, &column, &rowSpan, &columnSpan);
+        return QPair<int, int>(row, column);
+    };
+    auto* urlTitle = preview->findChild<QWidget*>("entryUrlTitleLabel");
+    auto* url = preview->findChild<QWidget*>("entryUrlLabel");
+    auto* expiration = preview->findChild<QWidget*>("entryExpirationLabel");
+    auto* tags = preview->findChild<QWidget*>("entryTagsList");
+    auto* notesTitle = preview->findChild<QWidget*>("entryNotesTitleLabel");
+    auto* attachments = preview->findChild<QWidget*>("entryAttachmentsWidget");
+    auto* attachmentsTitle = preview->findChild<QWidget*>("attachmentsTitleLabel");
+    QVERIFY(urlTitle && url && expiration && tags && notesTitle && attachments && attachmentsTitle);
+    QCOMPARE(gridPosition(urlTitle), qMakePair(2, 0));
+    QCOMPARE(gridPosition(url), qMakePair(2, 1));
+    QCOMPARE(gridPosition(expiration), qMakePair(3, 1));
+    QCOMPARE(gridPosition(tags), qMakePair(4, 1));
+    QCOMPARE(gridPosition(notesTitle), qMakePair(5, 0));
+    QCOMPARE(gridPosition(attachmentsTitle), qMakePair(2, 0));
+    QCOMPARE(gridPosition(attachments), qMakePair(3, 0));
+
+    // Attributes table is only as high as its rows
+    auto* attributesTable = preview->findChild<QTableWidget*>("entryAttributesTable");
+    QVERIFY(attributesTable);
+    noAutoTypeEntry->attributes()->set("first", "1");
+    noAutoTypeEntry->attributes()->set("second", "2");
+    preview->refresh();
+    const int expectedHeight = attributesTable->verticalHeader()->length() + 2 * attributesTable->frameWidth();
+    QCOMPARE(attributesTable->maximumHeight(), expectedHeight);
+    QTRY_COMPARE(attributesTable->height(), expectedHeight);
+    noAutoTypeEntry->attributes()->remove("first");
+    noAutoTypeEntry->attributes()->remove("second");
+    preview->refresh();
+
     // Clicking the URL moves focus to the visible sections, not the hidden tab widget
     m_mainWindow->activateWindow();
     auto* urlLabel = preview->findChild<QLabel*>("entryUrlLabel");
@@ -2493,6 +2531,16 @@ void TestGui::testEntryPreviewSections()
     QVERIFY(!tabs->isTabEnabled(2));
     QVERIFY(tabs->isTabEnabled(tabs->currentIndex()));
     QVERIFY(general->isVisible());
+
+    // Tabs restore the original two column layout
+    QCOMPARE(gridPosition(urlTitle), qMakePair(0, 4));
+    QCOMPARE(gridPosition(url), qMakePair(0, 5));
+    QCOMPARE(gridPosition(expiration), qMakePair(1, 5));
+    QCOMPARE(gridPosition(tags), qMakePair(2, 1));
+    QCOMPARE(gridPosition(notesTitle), qMakePair(3, 0));
+    QCOMPARE(gridPosition(attachmentsTitle), qMakePair(0, 1));
+    QCOMPARE(gridPosition(attachments), qMakePair(1, 1));
+    QCOMPARE(attributesTable->maximumHeight(), QWIDGETSIZE_MAX);
 
     // Menu action toggles the setting
     auto* action = m_mainWindow->findChild<QAction*>("actionShowPreviewSections");

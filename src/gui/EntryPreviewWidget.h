@@ -27,7 +27,9 @@ namespace Ui
 }
 
 class QFrame;
+class QGridLayout;
 class QLabel;
+class QLayoutItem;
 class QScrollArea;
 class QTabWidget;
 class QTextEdit;
@@ -95,10 +97,23 @@ private:
         bool active = false;
     };
 
+    struct GridItemPosition
+    {
+        QLayoutItem* item;
+        int row;
+        int column;
+        int rowSpan;
+        int columnSpan;
+    };
+
     void initSectionsView(SectionsView& view, QTabWidget* tabWidget);
     void setSectionsMode(SectionsView& view, bool enabled);
     void applySectionsMode();
     static void fitTextEditsToContents(QWidget* page, bool enabled);
+    static QLayoutItem* gridItem(QGridLayout* grid, const QObject* object);
+    static QList<GridItemPosition> moveGridItems(QGridLayout* grid, const QList<GridItemPosition>& targets);
+    void setEntryListLayout(bool enabled);
+    void fitAttributesTableToContents();
     void setTabEnabled(QTabWidget* tabWidget, QWidget* widget, bool enabled);
 
     static QString hierarchy(const Group* group, const QString& title);
@@ -112,6 +127,8 @@ private:
     quint8 m_selectedTabGroup;
     SectionsView m_entrySections;
     SectionsView m_groupSections;
+    QList<GridItemPosition> m_generalGridRestore;
+    QList<GridItemPosition> m_advancedGridRestore;
 };
 
 #endif // KEEPASSX_DETAILSWIDGET_H
