@@ -2464,6 +2464,14 @@ void TestGui::testEntryPreviewSections()
     QTRY_VERIFY(!autotypeHeading->isEnabled());
     QVERIFY(!autotype->isVisible());
 
+    // Clicking the URL moves focus to the visible sections, not the hidden tab widget
+    m_mainWindow->activateWindow();
+    auto* urlLabel = preview->findChild<QLabel*>("entryUrlLabel");
+    QVERIFY(urlLabel);
+    urlLabel->setFocus();
+    emit urlLabel->linkActivated("https://example.com");
+    QTRY_VERIFY(sections->hasFocus());
+
     // Toggling is idempotent and does not duplicate headings
     config()->set(Config::GUI_PreviewShowSections, true);
     config()->set(Config::GUI_PreviewShowSections, false);

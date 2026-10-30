@@ -83,7 +83,7 @@ EntryPreviewWidget::EntryPreviewWidget(QWidget* parent)
     // Prevent the url from being focused after clicked to allow the Copy Password button to work properly
     connect(m_ui->entryUrlLabel, &QLabel::linkActivated, this, [this] {
         openEntryUrl();
-        m_ui->entryTabWidget->setFocus();
+        setFocus();
     });
     connect(&m_totpTimer, SIGNAL(timeout()), SLOT(updateTotpLabel()));
 
