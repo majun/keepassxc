@@ -2025,6 +2025,24 @@ void MainWindow::initViewMenu()
         config()->set(Config::GUI_HidePreviewPanel, !checked);
     });
 
+    m_ui->actionPreviewPositionBottom->setData("bottom");
+    m_ui->actionPreviewPositionRight->setData("right");
+
+    auto previewPositionActions = new QActionGroup(this);
+    previewPositionActions->addAction(m_ui->actionPreviewPositionBottom);
+    previewPositionActions->addAction(m_ui->actionPreviewPositionRight);
+
+    auto previewPosition = config()->get(Config::GUI_PreviewPanelPosition).toString();
+    if (previewPosition == "right") {
+        m_ui->actionPreviewPositionRight->setChecked(true);
+    } else {
+        m_ui->actionPreviewPositionBottom->setChecked(true);
+    }
+
+    connect(previewPositionActions, &QActionGroup::triggered, this, [](QAction* action) {
+        config()->set(Config::GUI_PreviewPanelPosition, action->data());
+    });
+
     connect(m_ui->actionAlwaysOnTop, &QAction::toggled, this, [this](bool checked) {
         config()->set(Config::GUI_AlwaysOnTop, checked);
         if (checked) {

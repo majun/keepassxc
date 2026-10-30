@@ -68,6 +68,7 @@ private slots:
     void testDragAndDropKdbxFiles();
     void testSortGroups();
     void testAutoType();
+    void testPreviewPanelPosition();
     void testTrayRestoreHide();
     void testShortcutConfig();
     void testMenuActionStates();

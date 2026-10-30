@@ -298,6 +298,7 @@ private slots:
 
 private:
     int addChildWidget(QWidget* w);
+    void applyPreviewPanelPosition();
     void processAutoOpen();
     void openDatabaseFromEntry(const Entry* entry, bool inBackground = true);
     void performIconDownloads(const QList<Entry*>& entries, bool force = false, bool downloadInBackground = false);

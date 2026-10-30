@@ -31,6 +31,7 @@
 #include <QRadioButton>
 #include <QSignalSpy>
 #include <QSpinBox>
+#include <QSplitter>
 #include <QTableWidget>
 #include <QTest>
 #include <QToolBar>
@@ -2353,6 +2354,43 @@ void TestGui::testAutoType()
 
     // De-select third entry
     entryView->selectionModel()->clearSelection();
+}
+
+void TestGui::testPreviewPanelPosition()
+{
+    auto* splitter = m_dbWidget->findChild<QSplitter*>("previewSplitter");
+    QVERIFY(splitter);
+    QCOMPARE(splitter->orientation(), Qt::Vertical);
+
+    config()->set(Config::GUI_PreviewPanelPosition, "right");
+    QCOMPARE(splitter->orientation(), Qt::Horizontal);
+
+    // Unknown values fall back to the bottom position
+    config()->set(Config::GUI_PreviewPanelPosition, "bogus");
+    QCOMPARE(splitter->orientation(), Qt::Vertical);
+
+    // Position can be changed while the preview panel is hidden
+    config()->set(Config::GUI_HidePreviewPanel, true);
+    config()->set(Config::GUI_PreviewPanelPosition, "right");
+    QCOMPARE(splitter->orientation(), Qt::Horizontal);
+    config()->set(Config::GUI_HidePreviewPanel, false);
+
+    // Menu actions change the configuration
+    auto* actionRight = m_mainWindow->findChild<QAction*>("actionPreviewPositionRight");
+    auto* actionBottom = m_mainWindow->findChild<QAction*>("actionPreviewPositionBottom");
+    QVERIFY(actionRight);
+    QVERIFY(actionBottom);
+
+    actionBottom->trigger();
+    QVERIFY(actionBottom->isChecked());
+    QVERIFY(!actionRight->isChecked());
+    QCOMPARE(config()->get(Config::GUI_PreviewPanelPosition).toString(), QString("bottom"));
+    QCOMPARE(splitter->orientation(), Qt::Vertical);
+
+    actionRight->trigger();
+    QVERIFY(!actionBottom->isChecked());
+    QCOMPARE(config()->get(Config::GUI_PreviewPanelPosition).toString(), QString("right"));
+    QCOMPARE(splitter->orientation(), Qt::Horizontal);
 }
 
 void TestGui::testMenuActionStates()

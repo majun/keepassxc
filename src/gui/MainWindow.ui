@@ -388,12 +388,20 @@
      <addaction name="actionThemeDark"/>
      <addaction name="actionThemeClassic"/>
     </widget>
+    <widget class="QMenu" name="menuPreviewPanelPosition">
+     <property name="title">
+      <string>Preview Panel Position</string>
+     </property>
+     <addaction name="actionPreviewPositionBottom"/>
+     <addaction name="actionPreviewPositionRight"/>
+    </widget>
     <addaction name="menuTheme"/>
     <addaction name="actionCompactMode"/>
     <addaction name="actionAlwaysOnTop"/>
     <addaction name="actionAllowScreenCapture"/>
     <addaction name="separator"/>
     <addaction name="actionShowPreviewPanel"/>
+    <addaction name="menuPreviewPanelPosition"/>
     <addaction name="actionShowGroupPanel"/>
     <addaction name="separator"/>
     <addaction name="actionShowMenubar"/>
@@ -1228,6 +1236,22 @@
    </property>
    <property name="toolTip">
     <string>Toggle Show Preview Panel</string>
+   </property>
+  </action>
+  <action name="actionPreviewPositionBottom">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Bottom</string>
+   </property>
+  </action>
+  <action name="actionPreviewPositionRight">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Right</string>
    </property>
   </action>
   <action name="actionAlwaysOnTop">
