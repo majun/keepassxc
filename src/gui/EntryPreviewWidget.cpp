@@ -28,8 +28,13 @@
 #include "keeshare/KeeShare.h"
 #include "keeshare/KeeShareSettings.h"
 
+#include <QAbstractTextDocumentLayout>
+#include <QLabel>
+#include <QScrollArea>
 #include <QScrollBar>
 #include <QTabWidget>
+#include <QVBoxLayout>
+#include <QtMath>
 namespace
 {
     constexpr int GeneralTabIndex = 0;
@@ -94,6 +99,8 @@ EntryPreviewWidget::EntryPreviewWidget(QWidget* parent)
             setVisible(!config()->get(Config::GUI_HidePreviewPanel).toBool());
         } else if (key == Config::Security_HideTotpPreviewPanel) {
             m_ui->entryTotpButton->setChecked(!config()->get(Config::Security_HideTotpPreviewPanel).toBool());
+        } else if (key == Config::GUI_PreviewShowSections) {
+            applySectionsMode();
         }
         refresh();
     });
@@ -104,6 +111,9 @@ EntryPreviewWidget::EntryPreviewWidget(QWidget* parent)
     connect(m_ui->groupTabWidget, SIGNAL(tabBarClicked(int)), SLOT(updateTabIndexes()), Qt::QueuedConnection);
 
     setFocusProxy(m_ui->entryTabWidget);
+
+    initSectionsView(m_entrySections, m_ui->entryTabWidget);
+    applySectionsMode();
 }
 
 EntryPreviewWidget::~EntryPreviewWidget() = default;
@@ -194,10 +204,12 @@ void EntryPreviewWidget::refresh()
         setVisible(!config()->get(Config::GUI_HidePreviewPanel).toBool());
 
         m_ui->stackedWidget->setCurrentWidget(m_ui->pageEntry);
-        const int tabIndex =
-            m_ui->entryTabWidget->isTabEnabled(m_selectedTabEntry) ? m_selectedTabEntry : GeneralTabIndex;
-        Q_ASSERT(m_ui->entryTabWidget->isTabEnabled(GeneralTabIndex));
-        m_ui->entryTabWidget->setCurrentIndex(tabIndex);
+        if (!m_entrySections.active) {
+            const int tabIndex =
+                m_ui->entryTabWidget->isTabEnabled(m_selectedTabEntry) ? m_selectedTabEntry : GeneralTabIndex;
+            Q_ASSERT(m_ui->entryTabWidget->isTabEnabled(GeneralTabIndex));
+            m_ui->entryTabWidget->setCurrentIndex(tabIndex);
+        }
     } else if (m_currentGroup) {
         updateGroupHeaderLine();
         updateGroupGeneralTab();
@@ -562,7 +574,9 @@ void EntryPreviewWidget::updateTotpLabel()
 
 void EntryPreviewWidget::updateTabIndexes()
 {
-    m_selectedTabEntry = m_ui->entryTabWidget->currentIndex();
+    if (!m_entrySections.active) {
+        m_selectedTabEntry = m_ui->entryTabWidget->currentIndex();
+    }
     m_selectedTabGroup = m_ui->groupTabWidget->currentIndex();
 }
 
@@ -575,9 +589,123 @@ void EntryPreviewWidget::openEntryUrl()
 
 void EntryPreviewWidget::setTabEnabled(QTabWidget* tabWidget, QWidget* widget, bool enabled)
 {
+    if (tabWidget == m_entrySections.tabWidget) {
+        for (auto& section : m_entrySections.sections) {
+            if (section.page == widget) {
+                section.enabled = enabled;
+                break;
+            }
+        }
+        if (m_entrySections.active) {
+            setSectionsMode(m_entrySections, true);
+            return;
+        }
+    }
+
     const int tabIndex = tabWidget->indexOf(widget);
     Q_ASSERT(tabIndex != -1);
     tabWidget->setTabEnabled(tabIndex, enabled);
+}
+
+void EntryPreviewWidget::initSectionsView(SectionsView& view, QTabWidget* tabWidget)
+{
+    view.tabWidget = tabWidget;
+    for (int i = 0; i < tabWidget->count(); ++i) {
+        view.sections.append(
+            {tabWidget->widget(i), tabWidget->tabText(i), tabWidget->isTabEnabled(i), nullptr, nullptr});
+    }
+
+    auto* container = new QWidget();
+    view.layout = new QVBoxLayout(container);
+    view.layout->addStretch(1);
+
+    view.scrollArea = new QScrollArea(tabWidget->parentWidget());
+    view.scrollArea->setObjectName(tabWidget->objectName() + "Sections");
+    view.scrollArea->setFrameShape(QFrame::NoFrame);
+    view.scrollArea->setWidgetResizable(true);
+    view.scrollArea->setWidget(container);
+    view.scrollArea->hide();
+
+    // Place the sections right next to the tab widget so they take its place when shown
+    auto* parentLayout = qobject_cast<QBoxLayout*>(tabWidget->parentWidget()->layout());
+    Q_ASSERT(parentLayout);
+    parentLayout->insertWidget(parentLayout->indexOf(tabWidget) + 1, view.scrollArea);
+}
+
+void EntryPreviewWidget::setSectionsMode(SectionsView& view, bool enabled)
+{
+    if (enabled) {
+        if (!view.active) {
+            // Take the pages out of the tab widget and stack them with headings
+            view.tabWidget->clear();
+            int index = 0;
+            for (auto& section : view.sections) {
+                section.heading = new QLabel(section.title);
+                section.heading->setObjectName(section.page->objectName() + "Heading");
+                auto font = section.heading->font();
+                font.setBold(true);
+                section.heading->setFont(font);
+                section.separator = new QFrame();
+                section.separator->setFrameShape(QFrame::HLine);
+                section.separator->setFrameShadow(QFrame::Sunken);
+                view.layout->insertWidget(index++, section.heading);
+                view.layout->insertWidget(index++, section.separator);
+                view.layout->insertWidget(index++, section.page);
+                fitTextEditsToContents(section.page, true);
+            }
+            view.tabWidget->hide();
+            view.scrollArea->show();
+            setFocusProxy(view.scrollArea);
+            view.active = true;
+        }
+
+        // Empty sections keep a disabled heading, like disabled tabs
+        for (const auto& section : view.sections) {
+            section.heading->setEnabled(section.enabled);
+            section.page->setEnabled(section.enabled);
+            section.page->setVisible(section.enabled);
+        }
+    } else if (view.active) {
+        for (auto& section : view.sections) {
+            view.layout->removeWidget(section.page);
+            fitTextEditsToContents(section.page, false);
+            delete section.heading;
+            delete section.separator;
+            section.heading = nullptr;
+            section.separator = nullptr;
+            const int tabIndex = view.tabWidget->addTab(section.page, section.title);
+            view.tabWidget->setTabEnabled(tabIndex, section.enabled);
+        }
+        view.tabWidget->setCurrentIndex(GeneralTabIndex);
+        view.scrollArea->hide();
+        view.tabWidget->show();
+        setFocusProxy(view.tabWidget);
+        view.active = false;
+    }
+}
+
+void EntryPreviewWidget::fitTextEditsToContents(QWidget* page, bool enabled)
+{
+    // Text edits have no scroll area of their own in sections mode, so show their whole content
+    for (auto* textEdit : page->findChildren<QTextEdit*>()) {
+        auto* documentLayout = textEdit->document()->documentLayout();
+        if (enabled) {
+            auto fitHeight = [textEdit](const QSizeF& size) {
+                textEdit->setFixedHeight(qCeil(size.height()) + 2 * textEdit->frameWidth());
+            };
+            connect(documentLayout, &QAbstractTextDocumentLayout::documentSizeChanged, textEdit, fitHeight);
+            fitHeight(textEdit->document()->size());
+        } else {
+            disconnect(documentLayout, &QAbstractTextDocumentLayout::documentSizeChanged, textEdit, nullptr);
+            textEdit->setMinimumHeight(0);
+            textEdit->setMaximumHeight(QWIDGETSIZE_MAX);
+        }
+    }
+}
+
+void EntryPreviewWidget::applySectionsMode()
+{
+    setSectionsMode(m_entrySections, config()->get(Config::GUI_PreviewShowSections).toBool());
 }
 
 QString EntryPreviewWidget::hierarchy(const Group* group, const QString& title)

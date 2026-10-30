@@ -29,6 +29,7 @@
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QRadioButton>
+#include <QScrollArea>
 #include <QSignalSpy>
 #include <QSpinBox>
 #include <QSplitter>
@@ -2391,6 +2392,107 @@ void TestGui::testPreviewPanelPosition()
     QVERIFY(!actionBottom->isChecked());
     QCOMPARE(config()->get(Config::GUI_PreviewPanelPosition).toString(), QString("right"));
     QCOMPARE(splitter->orientation(), Qt::Horizontal);
+}
+
+void TestGui::testEntryPreviewSections()
+{
+    // Clear entries from root group to guarantee a known state
+    for (Entry* entry : m_db->rootGroup()->entries()) {
+        m_db->rootGroup()->removeEntry(entry);
+    }
+
+    auto* autoTypeEntry = new Entry();
+    autoTypeEntry->setUuid(QUuid::createUuid());
+    autoTypeEntry->setTitle("Auto-Type Entry");
+    autoTypeEntry->setAutoTypeEnabled(true);
+    autoTypeEntry->setGroup(m_db->rootGroup());
+
+    auto* noAutoTypeEntry = new Entry();
+    noAutoTypeEntry->setUuid(QUuid::createUuid());
+    noAutoTypeEntry->setTitle("No Auto-Type Entry");
+    noAutoTypeEntry->setAutoTypeEnabled(false);
+    noAutoTypeEntry->setGroup(m_db->rootGroup());
+
+    auto* entryView = m_dbWidget->findChild<EntryView*>("entryView");
+    QVERIFY(entryView);
+    entryView->setCurrentEntry(autoTypeEntry);
+
+    auto* preview = m_dbWidget->findChild<EntryPreviewWidget*>("previewWidget");
+    QVERIFY(preview);
+    QTRY_VERIFY(preview->isVisible());
+
+    auto* tabs = preview->findChild<QTabWidget*>("entryTabWidget");
+    auto* general = preview->findChild<QWidget*>("entryGeneralTab");
+    auto* advanced = preview->findChild<QWidget*>("entryAdvancedTab");
+    auto* autotype = preview->findChild<QWidget*>("entryAutotypeTab");
+    QVERIFY(tabs && general && advanced && autotype);
+    QVERIFY(tabs->isVisible());
+
+    // Remember a non-default tab to check it is restored safely later
+    tabs->setCurrentWidget(autotype);
+
+    config()->set(Config::GUI_PreviewShowSections, true);
+    auto* sections = preview->findChild<QScrollArea*>("entryTabWidgetSections");
+    QVERIFY(sections);
+    QVERIFY(sections->isVisible());
+    QVERIFY(!tabs->isVisible());
+    QVERIFY(general->isVisible());
+    QVERIFY(autotype->isVisible());
+
+    // Empty section: heading visible but disabled, content hidden
+    auto* advancedHeading = preview->findChild<QLabel*>("entryAdvancedTabHeading");
+    QVERIFY(advancedHeading);
+    QVERIFY(advancedHeading->isVisible());
+    QVERIFY(!advancedHeading->isEnabled());
+    QVERIFY(!advanced->isVisible());
+    QVERIFY(autotype->isEnabled());
+    QVERIFY(!advanced->isEnabled());
+
+    // Adding an attribute enables the section
+    autoTypeEntry->attributes()->set("foo", "bar");
+    preview->refresh();
+    QVERIFY(advancedHeading->isEnabled());
+    QVERIFY(advanced->isVisible());
+    autoTypeEntry->attributes()->remove("foo");
+    preview->refresh();
+    QVERIFY(!advancedHeading->isEnabled());
+
+    // Selecting an entry without Auto-Type disables that section
+    entryView->setCurrentEntry(noAutoTypeEntry);
+    auto* autotypeHeading = preview->findChild<QLabel*>("entryAutotypeTabHeading");
+    QVERIFY(autotypeHeading);
+    QTRY_VERIFY(!autotypeHeading->isEnabled());
+    QVERIFY(!autotype->isVisible());
+
+    // Toggling is idempotent and does not duplicate headings
+    config()->set(Config::GUI_PreviewShowSections, true);
+    config()->set(Config::GUI_PreviewShowSections, false);
+    config()->set(Config::GUI_PreviewShowSections, true);
+    QCOMPARE(preview->findChildren<QLabel*>("entryAdvancedTabHeading").size(), 1);
+
+    // Back to tabs: original order and titles, valid current tab
+    config()->set(Config::GUI_PreviewShowSections, false);
+    QVERIFY(tabs->isVisible());
+    QVERIFY(!sections->isVisible());
+    QCOMPARE(preview->findChildren<QLabel*>("entryAdvancedTabHeading").size(), 0);
+    QCOMPARE(tabs->count(), 3);
+    QCOMPARE(tabs->widget(0), general);
+    QCOMPARE(tabs->widget(1), advanced);
+    QCOMPARE(tabs->widget(2), autotype);
+    QCOMPARE(tabs->tabText(0), QString("General"));
+    QCOMPARE(tabs->tabText(2), QString("Autotype"));
+    QVERIFY(!tabs->isTabEnabled(1));
+    QVERIFY(!tabs->isTabEnabled(2));
+    QVERIFY(tabs->isTabEnabled(tabs->currentIndex()));
+    QVERIFY(general->isVisible());
+
+    // Menu action toggles the setting
+    auto* action = m_mainWindow->findChild<QAction*>("actionShowPreviewSections");
+    QVERIFY(action);
+    action->trigger();
+    QVERIFY(config()->get(Config::GUI_PreviewShowSections).toBool());
+    action->trigger();
+    QVERIFY(!config()->get(Config::GUI_PreviewShowSections).toBool());
 }
 
 void TestGui::testMenuActionStates()

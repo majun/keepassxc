@@ -69,6 +69,7 @@ private slots:
     void testSortGroups();
     void testAutoType();
     void testPreviewPanelPosition();
+    void testEntryPreviewSections();
     void testTrayRestoreHide();
     void testShortcutConfig();
     void testMenuActionStates();

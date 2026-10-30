@@ -91,6 +91,7 @@ public:
         GUI_HideGroupPanel,
         GUI_HidePreviewPanel,
         GUI_PreviewPanelPosition,
+        GUI_PreviewShowSections,
         GUI_AlwaysOnTop,
         GUI_ToolButtonStyle,
         GUI_LaunchAtStartup,

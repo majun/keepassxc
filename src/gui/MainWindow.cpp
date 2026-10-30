@@ -2043,6 +2043,11 @@ void MainWindow::initViewMenu()
         config()->set(Config::GUI_PreviewPanelPosition, action->data());
     });
 
+    m_ui->actionShowPreviewSections->setChecked(config()->get(Config::GUI_PreviewShowSections).toBool());
+    connect(m_ui->actionShowPreviewSections, &QAction::toggled, this, [](bool checked) {
+        config()->set(Config::GUI_PreviewShowSections, checked);
+    });
+
     connect(m_ui->actionAlwaysOnTop, &QAction::toggled, this, [this](bool checked) {
         config()->set(Config::GUI_AlwaysOnTop, checked);
         if (checked) {

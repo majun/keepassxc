@@ -402,6 +402,7 @@
     <addaction name="separator"/>
     <addaction name="actionShowPreviewPanel"/>
     <addaction name="menuPreviewPanelPosition"/>
+    <addaction name="actionShowPreviewSections"/>
     <addaction name="actionShowGroupPanel"/>
     <addaction name="separator"/>
     <addaction name="actionShowMenubar"/>
@@ -1252,6 +1253,17 @@
    </property>
    <property name="text">
     <string>Right</string>
+   </property>
+  </action>
+  <action name="actionShowPreviewSections">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Show Preview as Sections</string>
+   </property>
+   <property name="toolTip">
+    <string>Show all preview tabs below each other</string>
    </property>
   </action>
   <action name="actionAlwaysOnTop">
