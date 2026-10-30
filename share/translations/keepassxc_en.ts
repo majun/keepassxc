@@ -6509,6 +6509,26 @@ This version is not meant for production use.</source>
             <numerusform></numerusform>
         </translation>
     </message>
+    <message>
+        <source>Preview Panel Position</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Bottom</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Right</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Show Preview as Sections</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Show all preview tabs below each other</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>ManageDatabase</name>
