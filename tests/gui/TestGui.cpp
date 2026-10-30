@@ -22,6 +22,8 @@
 #include <QCheckBox>
 #include <QClipboard>
 #include <QDialog>
+#include <QGridLayout>
+#include <QHeaderView>
 #include <QListWidget>
 #include <QMenu>
 #include <QMenuBar>
@@ -29,8 +31,10 @@
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QRadioButton>
+#include <QScrollArea>
 #include <QSignalSpy>
 #include <QSpinBox>
+#include <QSplitter>
 #include <QTableWidget>
 #include <QTest>
 #include <QToolBar>
@@ -2353,6 +2357,248 @@ void TestGui::testAutoType()
 
     // De-select third entry
     entryView->selectionModel()->clearSelection();
+}
+
+void TestGui::testPreviewPanelPosition()
+{
+    auto* splitter = m_dbWidget->findChild<QSplitter*>("previewSplitter");
+    QVERIFY(splitter);
+    QCOMPARE(splitter->orientation(), Qt::Vertical);
+
+    config()->set(Config::GUI_PreviewPanelPosition, "right");
+    QCOMPARE(splitter->orientation(), Qt::Horizontal);
+
+    // Unknown values fall back to the bottom position
+    config()->set(Config::GUI_PreviewPanelPosition, "bogus");
+    QCOMPARE(splitter->orientation(), Qt::Vertical);
+
+    // Position can be changed while the preview panel is hidden
+    config()->set(Config::GUI_HidePreviewPanel, true);
+    config()->set(Config::GUI_PreviewPanelPosition, "right");
+    QCOMPARE(splitter->orientation(), Qt::Horizontal);
+    config()->set(Config::GUI_HidePreviewPanel, false);
+
+    // Menu actions change the configuration
+    auto* actionRight = m_mainWindow->findChild<QAction*>("actionPreviewPositionRight");
+    auto* actionBottom = m_mainWindow->findChild<QAction*>("actionPreviewPositionBottom");
+    QVERIFY(actionRight);
+    QVERIFY(actionBottom);
+
+    actionBottom->trigger();
+    QVERIFY(actionBottom->isChecked());
+    QVERIFY(!actionRight->isChecked());
+    QCOMPARE(config()->get(Config::GUI_PreviewPanelPosition).toString(), QString("bottom"));
+    QCOMPARE(splitter->orientation(), Qt::Vertical);
+
+    actionRight->trigger();
+    QVERIFY(!actionBottom->isChecked());
+    QCOMPARE(config()->get(Config::GUI_PreviewPanelPosition).toString(), QString("right"));
+    QCOMPARE(splitter->orientation(), Qt::Horizontal);
+}
+
+void TestGui::testEntryPreviewSections()
+{
+    // Clear entries from root group to guarantee a known state
+    for (Entry* entry : m_db->rootGroup()->entries()) {
+        m_db->rootGroup()->removeEntry(entry);
+    }
+
+    auto* autoTypeEntry = new Entry();
+    autoTypeEntry->setUuid(QUuid::createUuid());
+    autoTypeEntry->setTitle("Auto-Type Entry");
+    autoTypeEntry->setAutoTypeEnabled(true);
+    autoTypeEntry->setGroup(m_db->rootGroup());
+
+    auto* noAutoTypeEntry = new Entry();
+    noAutoTypeEntry->setUuid(QUuid::createUuid());
+    noAutoTypeEntry->setTitle("No Auto-Type Entry");
+    noAutoTypeEntry->setAutoTypeEnabled(false);
+    noAutoTypeEntry->setGroup(m_db->rootGroup());
+
+    auto* entryView = m_dbWidget->findChild<EntryView*>("entryView");
+    QVERIFY(entryView);
+    entryView->setCurrentEntry(autoTypeEntry);
+
+    auto* preview = m_dbWidget->findChild<EntryPreviewWidget*>("previewWidget");
+    QVERIFY(preview);
+    QTRY_VERIFY(preview->isVisible());
+
+    auto* tabs = preview->findChild<QTabWidget*>("entryTabWidget");
+    auto* general = preview->findChild<QWidget*>("entryGeneralTab");
+    auto* advanced = preview->findChild<QWidget*>("entryAdvancedTab");
+    auto* autotype = preview->findChild<QWidget*>("entryAutotypeTab");
+    QVERIFY(tabs && general && advanced && autotype);
+    QVERIFY(tabs->isVisible());
+
+    // Remember a non-default tab to check it is restored safely later
+    tabs->setCurrentWidget(autotype);
+
+    config()->set(Config::GUI_PreviewShowSections, true);
+    auto* sections = preview->findChild<QScrollArea*>("entryTabWidgetSections");
+    QVERIFY(sections);
+    QVERIFY(sections->isVisible());
+    QVERIFY(!tabs->isVisible());
+    QVERIFY(general->isVisible());
+    QVERIFY(autotype->isVisible());
+
+    // Empty section: heading visible but disabled, content hidden
+    auto* advancedHeading = preview->findChild<QLabel*>("entryAdvancedTabHeading");
+    QVERIFY(advancedHeading);
+    QVERIFY(advancedHeading->isVisible());
+    QVERIFY(!advancedHeading->isEnabled());
+    QVERIFY(!advanced->isVisible());
+    QVERIFY(autotype->isEnabled());
+    QVERIFY(!advanced->isEnabled());
+
+    // Adding an attribute enables the section
+    autoTypeEntry->attributes()->set("foo", "bar");
+    preview->refresh();
+    QVERIFY(advancedHeading->isEnabled());
+    QVERIFY(advanced->isVisible());
+    autoTypeEntry->attributes()->remove("foo");
+    preview->refresh();
+    QVERIFY(!advancedHeading->isEnabled());
+
+    // Selecting an entry without Auto-Type disables that section
+    entryView->setCurrentEntry(noAutoTypeEntry);
+    auto* autotypeHeading = preview->findChild<QLabel*>("entryAutotypeTabHeading");
+    QVERIFY(autotypeHeading);
+    QTRY_VERIFY(!autotypeHeading->isEnabled());
+    QVERIFY(!autotype->isVisible());
+
+    // Sections show the fields as a single list: right hand column moves below the left one
+    auto gridPosition = [](QWidget* widget) {
+        auto* grid = qobject_cast<QGridLayout*>(widget->parentWidget()->layout());
+        int row, column, rowSpan, columnSpan;
+        grid->getItemPosition(grid->indexOf(widget), &row, &column, &rowSpan, &columnSpan);
+        return QPair<int, int>(row, column);
+    };
+    auto* urlTitle = preview->findChild<QWidget*>("entryUrlTitleLabel");
+    auto* url = preview->findChild<QWidget*>("entryUrlLabel");
+    auto* expiration = preview->findChild<QWidget*>("entryExpirationLabel");
+    auto* tags = preview->findChild<QWidget*>("entryTagsList");
+    auto* notesTitle = preview->findChild<QWidget*>("entryNotesTitleLabel");
+    auto* attachments = preview->findChild<QWidget*>("entryAttachmentsWidget");
+    auto* attachmentsTitle = preview->findChild<QWidget*>("attachmentsTitleLabel");
+    QVERIFY(urlTitle && url && expiration && tags && notesTitle && attachments && attachmentsTitle);
+    QCOMPARE(gridPosition(urlTitle), qMakePair(2, 0));
+    QCOMPARE(gridPosition(url), qMakePair(2, 1));
+    QCOMPARE(gridPosition(expiration), qMakePair(3, 1));
+    QCOMPARE(gridPosition(tags), qMakePair(4, 1));
+    QCOMPARE(gridPosition(notesTitle), qMakePair(5, 0));
+    QCOMPARE(gridPosition(attachmentsTitle), qMakePair(2, 0));
+    QCOMPARE(gridPosition(attachments), qMakePair(3, 0));
+
+    // Attributes table is only as high as its rows
+    auto* attributesTable = preview->findChild<QTableWidget*>("entryAttributesTable");
+    QVERIFY(attributesTable);
+    noAutoTypeEntry->attributes()->set("first", "1");
+    noAutoTypeEntry->attributes()->set("second", "2");
+    preview->refresh();
+    const int expectedHeight = attributesTable->verticalHeader()->length() + 2 * attributesTable->frameWidth();
+    QCOMPARE(attributesTable->maximumHeight(), expectedHeight);
+    QTRY_COMPARE(attributesTable->height(), expectedHeight);
+    noAutoTypeEntry->attributes()->remove("first");
+    noAutoTypeEntry->attributes()->remove("second");
+    preview->refresh();
+
+    // Clicking the URL moves focus to the visible sections, not the hidden tab widget
+    m_mainWindow->activateWindow();
+    auto* urlLabel = preview->findChild<QLabel*>("entryUrlLabel");
+    QVERIFY(urlLabel);
+    urlLabel->setFocus();
+    emit urlLabel->linkActivated("https://example.com");
+    QTRY_VERIFY(sections->hasFocus());
+
+    // Toggling is idempotent and does not duplicate headings
+    config()->set(Config::GUI_PreviewShowSections, true);
+    config()->set(Config::GUI_PreviewShowSections, false);
+    config()->set(Config::GUI_PreviewShowSections, true);
+    QCOMPARE(preview->findChildren<QLabel*>("entryAdvancedTabHeading").size(), 1);
+
+    // Back to tabs: original order and titles, valid current tab
+    config()->set(Config::GUI_PreviewShowSections, false);
+    QVERIFY(tabs->isVisible());
+    QVERIFY(!sections->isVisible());
+    QCOMPARE(preview->findChildren<QLabel*>("entryAdvancedTabHeading").size(), 0);
+    QCOMPARE(tabs->count(), 3);
+    QCOMPARE(tabs->widget(0), general);
+    QCOMPARE(tabs->widget(1), advanced);
+    QCOMPARE(tabs->widget(2), autotype);
+    QCOMPARE(tabs->tabText(0), QString("General"));
+    QCOMPARE(tabs->tabText(2), QString("Autotype"));
+    QVERIFY(!tabs->isTabEnabled(1));
+    QVERIFY(!tabs->isTabEnabled(2));
+    QVERIFY(tabs->isTabEnabled(tabs->currentIndex()));
+    QVERIFY(general->isVisible());
+
+    // Tabs restore the original two column layout
+    QCOMPARE(gridPosition(urlTitle), qMakePair(0, 4));
+    QCOMPARE(gridPosition(url), qMakePair(0, 5));
+    QCOMPARE(gridPosition(expiration), qMakePair(1, 5));
+    QCOMPARE(gridPosition(tags), qMakePair(2, 1));
+    QCOMPARE(gridPosition(notesTitle), qMakePair(3, 0));
+    QCOMPARE(gridPosition(attachmentsTitle), qMakePair(0, 1));
+    QCOMPARE(gridPosition(attachments), qMakePair(1, 1));
+    QCOMPARE(attributesTable->maximumHeight(), QWIDGETSIZE_MAX);
+
+    // Menu action toggles the setting
+    auto* action = m_mainWindow->findChild<QAction*>("actionShowPreviewSections");
+    QVERIFY(action);
+    action->trigger();
+    QVERIFY(config()->get(Config::GUI_PreviewShowSections).toBool());
+    action->trigger();
+    QVERIFY(!config()->get(Config::GUI_PreviewShowSections).toBool());
+}
+
+void TestGui::testGroupPreviewSections()
+{
+    auto* preview = m_dbWidget->findChild<EntryPreviewWidget*>("previewWidget");
+    QVERIFY(preview);
+    auto* tabs = preview->findChild<QTabWidget*>("groupTabWidget");
+    auto* general = preview->findChild<QWidget*>("groupGeneralTab");
+    auto* share = preview->findChild<QWidget*>("groupShareTab");
+    QVERIFY(tabs && general && share);
+
+    config()->set(Config::GUI_PreviewShowSections, true);
+
+    // Non-shared group: Share section has a disabled heading and no content
+    m_dbWidget->groupView()->setCurrentGroup(m_db->rootGroup()->children().first());
+    auto* sections = preview->findChild<QScrollArea*>("groupTabWidgetSections");
+    QVERIFY(sections);
+    QTRY_VERIFY(sections->isVisible());
+    QVERIFY(!tabs->isVisible());
+    QVERIFY(general->isVisible());
+    auto* shareHeading = preview->findChild<QLabel*>("groupShareTabHeading");
+    QVERIFY(shareHeading);
+    QVERIFY(shareHeading->isVisible());
+    QVERIFY(!shareHeading->isEnabled());
+    QVERIFY(!share->isVisible());
+
+    // Switching between entry and group previews keeps sections for both
+    auto* entry = new Entry();
+    entry->setUuid(QUuid::createUuid());
+    entry->setTitle("Sections Entry");
+    entry->setGroup(m_db->rootGroup());
+    m_dbWidget->groupView()->setCurrentGroup(m_db->rootGroup());
+    auto* entryView = m_dbWidget->findChild<EntryView*>("entryView");
+    entryView->setCurrentEntry(entry);
+    auto* entrySections = preview->findChild<QScrollArea*>("entryTabWidgetSections");
+    QTRY_VERIFY(entrySections->isVisible());
+    m_dbWidget->groupView()->setCurrentGroup(m_db->rootGroup()->children().first());
+    QTRY_VERIFY(sections->isVisible());
+    QVERIFY(!tabs->isVisible());
+
+    // Back to tabs: original order and titles
+    config()->set(Config::GUI_PreviewShowSections, false);
+    QVERIFY(tabs->isVisible());
+    QVERIFY(!sections->isVisible());
+    QCOMPARE(tabs->count(), 2);
+    QCOMPARE(tabs->widget(0), general);
+    QCOMPARE(tabs->widget(1), share);
+    QCOMPARE(tabs->tabText(0), QString("General"));
+    QVERIFY(!tabs->isTabEnabled(1));
+    QCOMPARE(tabs->currentIndex(), 0);
 }
 
 void TestGui::testMenuActionStates()

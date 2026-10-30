@@ -153,8 +153,9 @@ DatabaseWidget::DatabaseWidget(QSharedPointer<Database> db, QWidget* parent)
     m_mainSplitter->setStretchFactor(1, 100);
     m_mainSplitter->setSizes({1, 1});
 
-    m_previewSplitter->setOrientation(Qt::Vertical);
+    m_previewSplitter->setObjectName("previewSplitter");
     m_previewSplitter->setChildrenCollapsible(true);
+    applyPreviewPanelPosition();
 
     m_groupView->setObjectName("groupView");
     m_groupView->setContextMenuPolicy(Qt::CustomContextMenu);
@@ -396,7 +397,11 @@ void DatabaseWidget::setSplitterSizes(const QHash<Config::ConfigKey, QList<int>>
             break;
         case Config::GUI_PreviewSplitterState:
             if (value.size() < 2) {
-                value = QList({static_cast<int>(height() * 0.8), static_cast<int>(height() * 0.2)});
+                if (m_previewSplitter->orientation() == Qt::Horizontal) {
+                    value = QList({static_cast<int>(width() * 0.6), static_cast<int>(width() * 0.4)});
+                } else {
+                    value = QList({static_cast<int>(height() * 0.8), static_cast<int>(height() * 0.2)});
+                }
             }
             m_previewSplitter->setSizes(value);
             break;
@@ -418,6 +423,19 @@ void DatabaseWidget::onConfigChanged(Config::ConfigKey key)
         // Toggle the group splitter visibility and reset the size
         m_groupSplitter->setVisible(!config()->get(Config::GUI_HideGroupPanel).toBool());
         setSplitterSizes({{Config::GUI_SplitterState, QList<int>({})}});
+    } else if (key == Config::GUI_PreviewPanelPosition) {
+        applyPreviewPanelPosition();
+    }
+}
+
+void DatabaseWidget::applyPreviewPanelPosition()
+{
+    const auto position = config()->get(Config::GUI_PreviewPanelPosition).toString();
+    const auto orientation = position == QStringLiteral("right") ? Qt::Horizontal : Qt::Vertical;
+    if (m_previewSplitter->orientation() != orientation) {
+        m_previewSplitter->setOrientation(orientation);
+        // Stored sizes belong to the other orientation, fall back to the default ratio
+        setSplitterSizes({{Config::GUI_PreviewSplitterState, QList<int>({})}});
     }
 }
 

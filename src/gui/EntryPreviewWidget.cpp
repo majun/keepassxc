@@ -28,8 +28,15 @@
 #include "keeshare/KeeShare.h"
 #include "keeshare/KeeShareSettings.h"
 
+#include <QAbstractTextDocumentLayout>
+#include <QGridLayout>
+#include <QHeaderView>
+#include <QLabel>
+#include <QScrollArea>
 #include <QScrollBar>
 #include <QTabWidget>
+#include <QVBoxLayout>
+#include <QtMath>
 namespace
 {
     constexpr int GeneralTabIndex = 0;
@@ -78,7 +85,7 @@ EntryPreviewWidget::EntryPreviewWidget(QWidget* parent)
     // Prevent the url from being focused after clicked to allow the Copy Password button to work properly
     connect(m_ui->entryUrlLabel, &QLabel::linkActivated, this, [this] {
         openEntryUrl();
-        m_ui->entryTabWidget->setFocus();
+        setFocus();
     });
     connect(&m_totpTimer, SIGNAL(timeout()), SLOT(updateTotpLabel()));
 
@@ -89,11 +96,18 @@ EntryPreviewWidget::EntryPreviewWidget(QWidget* parent)
         }
     });
 
+    // Revealing a protected attribute can change the row height
+    connect(m_ui->entryAttributesTable->verticalHeader(), &QHeaderView::sectionResized, this, [this] {
+        fitAttributesTableToContents();
+    });
+
     connect(config(), &Config::changed, this, [this](Config::ConfigKey key) {
         if (key == Config::GUI_HidePreviewPanel) {
             setVisible(!config()->get(Config::GUI_HidePreviewPanel).toBool());
         } else if (key == Config::Security_HideTotpPreviewPanel) {
             m_ui->entryTotpButton->setChecked(!config()->get(Config::Security_HideTotpPreviewPanel).toBool());
+        } else if (key == Config::GUI_PreviewShowSections) {
+            applySectionsMode();
         }
         refresh();
     });
@@ -104,6 +118,10 @@ EntryPreviewWidget::EntryPreviewWidget(QWidget* parent)
     connect(m_ui->groupTabWidget, SIGNAL(tabBarClicked(int)), SLOT(updateTabIndexes()), Qt::QueuedConnection);
 
     setFocusProxy(m_ui->entryTabWidget);
+
+    initSectionsView(m_entrySections, m_ui->entryTabWidget);
+    initSectionsView(m_groupSections, m_ui->groupTabWidget);
+    applySectionsMode();
 }
 
 EntryPreviewWidget::~EntryPreviewWidget() = default;
@@ -194,10 +212,12 @@ void EntryPreviewWidget::refresh()
         setVisible(!config()->get(Config::GUI_HidePreviewPanel).toBool());
 
         m_ui->stackedWidget->setCurrentWidget(m_ui->pageEntry);
-        const int tabIndex =
-            m_ui->entryTabWidget->isTabEnabled(m_selectedTabEntry) ? m_selectedTabEntry : GeneralTabIndex;
-        Q_ASSERT(m_ui->entryTabWidget->isTabEnabled(GeneralTabIndex));
-        m_ui->entryTabWidget->setCurrentIndex(tabIndex);
+        if (!m_entrySections.active) {
+            const int tabIndex =
+                m_ui->entryTabWidget->isTabEnabled(m_selectedTabEntry) ? m_selectedTabEntry : GeneralTabIndex;
+            Q_ASSERT(m_ui->entryTabWidget->isTabEnabled(GeneralTabIndex));
+            m_ui->entryTabWidget->setCurrentIndex(tabIndex);
+        }
     } else if (m_currentGroup) {
         updateGroupHeaderLine();
         updateGroupGeneralTab();
@@ -206,10 +226,12 @@ void EntryPreviewWidget::refresh()
         setVisible(!config()->get(Config::GUI_HidePreviewPanel).toBool());
 
         m_ui->stackedWidget->setCurrentWidget(m_ui->pageGroup);
-        const int tabIndex =
-            m_ui->groupTabWidget->isTabEnabled(m_selectedTabGroup) ? m_selectedTabGroup : GeneralTabIndex;
-        Q_ASSERT(m_ui->groupTabWidget->isTabEnabled(GeneralTabIndex));
-        m_ui->groupTabWidget->setCurrentIndex(tabIndex);
+        if (!m_groupSections.active) {
+            const int tabIndex =
+                m_ui->groupTabWidget->isTabEnabled(m_selectedTabGroup) ? m_selectedTabGroup : GeneralTabIndex;
+            Q_ASSERT(m_ui->groupTabWidget->isTabEnabled(GeneralTabIndex));
+            m_ui->groupTabWidget->setCurrentIndex(tabIndex);
+        }
     } else {
         hide();
     }
@@ -467,6 +489,7 @@ void EntryPreviewWidget::updateEntryAdvancedTab()
     m_ui->entryAttributesTable->horizontalHeader()->setStretchLastSection(true);
     m_ui->entryAttributesTable->resizeColumnsToContents();
     m_ui->entryAttributesTable->resizeRowsToContents();
+    fitAttributesTableToContents();
     m_ui->entryAttachmentsWidget->linkAttachments(m_currentEntry->attachments());
 }
 
@@ -562,8 +585,12 @@ void EntryPreviewWidget::updateTotpLabel()
 
 void EntryPreviewWidget::updateTabIndexes()
 {
-    m_selectedTabEntry = m_ui->entryTabWidget->currentIndex();
-    m_selectedTabGroup = m_ui->groupTabWidget->currentIndex();
+    if (!m_entrySections.active) {
+        m_selectedTabEntry = m_ui->entryTabWidget->currentIndex();
+    }
+    if (!m_groupSections.active) {
+        m_selectedTabGroup = m_ui->groupTabWidget->currentIndex();
+    }
 }
 
 void EntryPreviewWidget::openEntryUrl()
@@ -575,9 +602,213 @@ void EntryPreviewWidget::openEntryUrl()
 
 void EntryPreviewWidget::setTabEnabled(QTabWidget* tabWidget, QWidget* widget, bool enabled)
 {
+    auto& view = tabWidget == m_entrySections.tabWidget ? m_entrySections : m_groupSections;
+    for (auto& section : view.sections) {
+        if (section.page == widget) {
+            section.enabled = enabled;
+            break;
+        }
+    }
+    if (view.active) {
+        setSectionsMode(view, true);
+        return;
+    }
+
     const int tabIndex = tabWidget->indexOf(widget);
     Q_ASSERT(tabIndex != -1);
     tabWidget->setTabEnabled(tabIndex, enabled);
+}
+
+void EntryPreviewWidget::initSectionsView(SectionsView& view, QTabWidget* tabWidget)
+{
+    view.tabWidget = tabWidget;
+    for (int i = 0; i < tabWidget->count(); ++i) {
+        view.sections.append(
+            {tabWidget->widget(i), tabWidget->tabText(i), tabWidget->isTabEnabled(i), nullptr, nullptr});
+    }
+
+    auto* container = new QWidget();
+    view.layout = new QVBoxLayout(container);
+    view.layout->addStretch(1);
+
+    view.scrollArea = new QScrollArea(tabWidget->parentWidget());
+    view.scrollArea->setObjectName(tabWidget->objectName() + "Sections");
+    view.scrollArea->setFrameShape(QFrame::NoFrame);
+    view.scrollArea->setWidgetResizable(true);
+    view.scrollArea->setWidget(container);
+    view.scrollArea->hide();
+
+    // Place the sections right next to the tab widget so they take its place when shown
+    auto* parentLayout = qobject_cast<QBoxLayout*>(tabWidget->parentWidget()->layout());
+    Q_ASSERT(parentLayout);
+    parentLayout->insertWidget(parentLayout->indexOf(tabWidget) + 1, view.scrollArea);
+}
+
+void EntryPreviewWidget::setSectionsMode(SectionsView& view, bool enabled)
+{
+    if (enabled) {
+        if (!view.active) {
+            // Take the pages out of the tab widget and stack them with headings
+            view.tabWidget->clear();
+            int index = 0;
+            for (auto& section : view.sections) {
+                section.heading = new QLabel(section.title);
+                section.heading->setObjectName(section.page->objectName() + "Heading");
+                auto font = section.heading->font();
+                font.setBold(true);
+                section.heading->setFont(font);
+                section.separator = new QFrame();
+                section.separator->setFrameShape(QFrame::HLine);
+                section.separator->setFrameShadow(QFrame::Sunken);
+                view.layout->insertWidget(index++, section.heading);
+                view.layout->insertWidget(index++, section.separator);
+                view.layout->insertWidget(index++, section.page);
+                fitTextEditsToContents(section.page, true);
+            }
+            view.tabWidget->hide();
+            view.scrollArea->show();
+            if (&view == &m_entrySections) {
+                setFocusProxy(view.scrollArea);
+            }
+            view.active = true;
+        }
+
+        // Empty sections keep a disabled heading, like disabled tabs
+        for (const auto& section : view.sections) {
+            section.heading->setEnabled(section.enabled);
+            section.page->setEnabled(section.enabled);
+            section.page->setVisible(section.enabled);
+        }
+    } else if (view.active) {
+        for (auto& section : view.sections) {
+            view.layout->removeWidget(section.page);
+            fitTextEditsToContents(section.page, false);
+            delete section.heading;
+            delete section.separator;
+            section.heading = nullptr;
+            section.separator = nullptr;
+            const int tabIndex = view.tabWidget->addTab(section.page, section.title);
+            view.tabWidget->setTabEnabled(tabIndex, section.enabled);
+        }
+        view.tabWidget->setCurrentIndex(GeneralTabIndex);
+        view.scrollArea->hide();
+        view.tabWidget->show();
+        if (&view == &m_entrySections) {
+            setFocusProxy(view.tabWidget);
+        }
+        view.active = false;
+    }
+}
+
+void EntryPreviewWidget::fitTextEditsToContents(QWidget* page, bool enabled)
+{
+    // Text edits have no scroll area of their own in sections mode, so show their whole content
+    for (auto* textEdit : page->findChildren<QTextEdit*>()) {
+        auto* documentLayout = textEdit->document()->documentLayout();
+        if (enabled) {
+            auto fitHeight = [textEdit](const QSizeF& size) {
+                textEdit->setFixedHeight(qCeil(size.height()) + 2 * textEdit->frameWidth());
+            };
+            connect(documentLayout, &QAbstractTextDocumentLayout::documentSizeChanged, textEdit, fitHeight);
+            fitHeight(textEdit->document()->size());
+        } else {
+            disconnect(documentLayout, &QAbstractTextDocumentLayout::documentSizeChanged, textEdit, nullptr);
+            textEdit->setMinimumHeight(0);
+            textEdit->setMaximumHeight(QWIDGETSIZE_MAX);
+        }
+    }
+}
+
+QLayoutItem* EntryPreviewWidget::gridItem(QGridLayout* grid, const QObject* object)
+{
+    for (int i = 0; i < grid->count(); ++i) {
+        auto* item = grid->itemAt(i);
+        if (item->widget() == object || item->layout() == object) {
+            return item;
+        }
+    }
+    Q_ASSERT(false);
+    return nullptr;
+}
+
+// Moves the given grid items to their target positions and returns their previous positions
+QList<EntryPreviewWidget::GridItemPosition> EntryPreviewWidget::moveGridItems(QGridLayout* grid,
+                                                                              const QList<GridItemPosition>& targets)
+{
+    QList<GridItemPosition> previous;
+    for (const auto& target : targets) {
+        const int index = grid->indexOf(target.item);
+        GridItemPosition position{target.item, 0, 0, 0, 0};
+        grid->getItemPosition(index, &position.row, &position.column, &position.rowSpan, &position.columnSpan);
+        previous.append(position);
+        grid->takeAt(index);
+    }
+
+    for (const auto& target : targets) {
+        if (auto* layout = target.item->layout()) {
+            grid->addLayout(layout, target.row, target.column, target.rowSpan, target.columnSpan, layout->alignment());
+        } else {
+            grid->addItem(
+                target.item, target.row, target.column, target.rowSpan, target.columnSpan, target.item->alignment());
+        }
+    }
+    return previous;
+}
+
+void EntryPreviewWidget::setEntryListLayout(bool enabled)
+{
+    // In sections mode the right hand column of the General and Advanced pages is moved below the left one
+    auto* general = qobject_cast<QGridLayout*>(m_ui->entryGeneralWidget->layout());
+    auto* advanced = qobject_cast<QGridLayout*>(m_ui->entryAdvancedTab->layout());
+    Q_ASSERT(general && advanced);
+
+    if (enabled && m_generalGridRestore.isEmpty()) {
+        m_generalGridRestore = moveGridItems(general,
+                                             {{gridItem(general, m_ui->entryUrlTitleLabel), 2, 0, 1, 1},
+                                              {gridItem(general, m_ui->entryUrlLabel), 2, 1, 1, 2},
+                                              {gridItem(general, m_ui->entryExpirationTitleLabel), 3, 0, 1, 1},
+                                              {gridItem(general, m_ui->entryExpirationLabel), 3, 1, 1, 2},
+                                              {gridItem(general, m_ui->entryTagsTitleLabel), 4, 0, 1, 1},
+                                              {gridItem(general, m_ui->entryTagsList), 4, 1, 1, 5},
+                                              {gridItem(general, m_ui->entryNotesTitleLabel), 5, 0, 1, 1},
+                                              {gridItem(general, m_ui->horizontalLayout_3), 5, 1, 1, 5}});
+        general->setRowStretch(3, 0);
+        general->setRowStretch(5, 1);
+        m_advancedGridRestore = moveGridItems(advanced,
+                                              {{gridItem(advanced, m_ui->attachmentsTitleLabel), 2, 0, 1, 1},
+                                               {gridItem(advanced, m_ui->entryAttachmentsWidget), 3, 0, 1, 1}});
+        fitAttributesTableToContents();
+    } else if (!enabled && !m_generalGridRestore.isEmpty()) {
+        moveGridItems(general, m_generalGridRestore);
+        m_generalGridRestore.clear();
+        general->setRowStretch(5, 0);
+        general->setRowStretch(3, 1);
+        moveGridItems(advanced, m_advancedGridRestore);
+        m_advancedGridRestore.clear();
+        m_ui->entryAttributesTable->setMinimumHeight(0);
+        m_ui->entryAttributesTable->setMaximumHeight(QWIDGETSIZE_MAX);
+    }
+}
+
+void EntryPreviewWidget::fitAttributesTableToContents()
+{
+    if (!m_entrySections.active) {
+        return;
+    }
+    auto* table = m_ui->entryAttributesTable;
+    int height = table->verticalHeader()->length() + 2 * table->frameWidth();
+    if (table->horizontalHeader()->isVisible()) {
+        height += table->horizontalHeader()->height();
+    }
+    table->setFixedHeight(height);
+}
+
+void EntryPreviewWidget::applySectionsMode()
+{
+    const bool enabled = config()->get(Config::GUI_PreviewShowSections).toBool();
+    setSectionsMode(m_entrySections, enabled);
+    setSectionsMode(m_groupSections, enabled);
+    setEntryListLayout(enabled);
 }
 
 QString EntryPreviewWidget::hierarchy(const Group* group, const QString& title)

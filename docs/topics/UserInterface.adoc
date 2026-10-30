@@ -18,6 +18,8 @@ image::main_interface.png[]
 
 *(D) Preview* – Shows a preview of the selected group or entry. You can interact with most information stored in an entry from here without opening the entry for editing. You can temporarily hide this preview using the down-arrow button on the right hand side or completely disable it from the View menu.
 
+The preview can be placed to the right of the entry list instead of below it from _View > Preview Panel Position_. Selecting _View > Show Preview as Sections_ shows all preview tabs below each other with headings, so no information is hidden behind a tab.
+
 [TIP]
 ====
 Starting with version 2.7.0, double-click copying of entry usernames and passwords is disabled by default.
