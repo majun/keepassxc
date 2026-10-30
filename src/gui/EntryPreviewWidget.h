@@ -111,6 +111,7 @@ private:
     quint8 m_selectedTabEntry;
     quint8 m_selectedTabGroup;
     SectionsView m_entrySections;
+    SectionsView m_groupSections;
 };
 
 #endif // KEEPASSX_DETAILSWIDGET_H

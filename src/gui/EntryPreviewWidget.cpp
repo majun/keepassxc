@@ -113,6 +113,7 @@ EntryPreviewWidget::EntryPreviewWidget(QWidget* parent)
     setFocusProxy(m_ui->entryTabWidget);
 
     initSectionsView(m_entrySections, m_ui->entryTabWidget);
+    initSectionsView(m_groupSections, m_ui->groupTabWidget);
     applySectionsMode();
 }
 
@@ -218,10 +219,12 @@ void EntryPreviewWidget::refresh()
         setVisible(!config()->get(Config::GUI_HidePreviewPanel).toBool());
 
         m_ui->stackedWidget->setCurrentWidget(m_ui->pageGroup);
-        const int tabIndex =
-            m_ui->groupTabWidget->isTabEnabled(m_selectedTabGroup) ? m_selectedTabGroup : GeneralTabIndex;
-        Q_ASSERT(m_ui->groupTabWidget->isTabEnabled(GeneralTabIndex));
-        m_ui->groupTabWidget->setCurrentIndex(tabIndex);
+        if (!m_groupSections.active) {
+            const int tabIndex =
+                m_ui->groupTabWidget->isTabEnabled(m_selectedTabGroup) ? m_selectedTabGroup : GeneralTabIndex;
+            Q_ASSERT(m_ui->groupTabWidget->isTabEnabled(GeneralTabIndex));
+            m_ui->groupTabWidget->setCurrentIndex(tabIndex);
+        }
     } else {
         hide();
     }
@@ -577,7 +580,9 @@ void EntryPreviewWidget::updateTabIndexes()
     if (!m_entrySections.active) {
         m_selectedTabEntry = m_ui->entryTabWidget->currentIndex();
     }
-    m_selectedTabGroup = m_ui->groupTabWidget->currentIndex();
+    if (!m_groupSections.active) {
+        m_selectedTabGroup = m_ui->groupTabWidget->currentIndex();
+    }
 }
 
 void EntryPreviewWidget::openEntryUrl()
@@ -589,17 +594,16 @@ void EntryPreviewWidget::openEntryUrl()
 
 void EntryPreviewWidget::setTabEnabled(QTabWidget* tabWidget, QWidget* widget, bool enabled)
 {
-    if (tabWidget == m_entrySections.tabWidget) {
-        for (auto& section : m_entrySections.sections) {
-            if (section.page == widget) {
-                section.enabled = enabled;
-                break;
-            }
+    auto& view = tabWidget == m_entrySections.tabWidget ? m_entrySections : m_groupSections;
+    for (auto& section : view.sections) {
+        if (section.page == widget) {
+            section.enabled = enabled;
+            break;
         }
-        if (m_entrySections.active) {
-            setSectionsMode(m_entrySections, true);
-            return;
-        }
+    }
+    if (view.active) {
+        setSectionsMode(view, true);
+        return;
     }
 
     const int tabIndex = tabWidget->indexOf(widget);
@@ -655,7 +659,9 @@ void EntryPreviewWidget::setSectionsMode(SectionsView& view, bool enabled)
             }
             view.tabWidget->hide();
             view.scrollArea->show();
-            setFocusProxy(view.scrollArea);
+            if (&view == &m_entrySections) {
+                setFocusProxy(view.scrollArea);
+            }
             view.active = true;
         }
 
@@ -679,7 +685,9 @@ void EntryPreviewWidget::setSectionsMode(SectionsView& view, bool enabled)
         view.tabWidget->setCurrentIndex(GeneralTabIndex);
         view.scrollArea->hide();
         view.tabWidget->show();
-        setFocusProxy(view.tabWidget);
+        if (&view == &m_entrySections) {
+            setFocusProxy(view.tabWidget);
+        }
         view.active = false;
     }
 }
@@ -705,7 +713,9 @@ void EntryPreviewWidget::fitTextEditsToContents(QWidget* page, bool enabled)
 
 void EntryPreviewWidget::applySectionsMode()
 {
-    setSectionsMode(m_entrySections, config()->get(Config::GUI_PreviewShowSections).toBool());
+    const bool enabled = config()->get(Config::GUI_PreviewShowSections).toBool();
+    setSectionsMode(m_entrySections, enabled);
+    setSectionsMode(m_groupSections, enabled);
 }
 
 QString EntryPreviewWidget::hierarchy(const Group* group, const QString& title)

@@ -2495,6 +2495,56 @@ void TestGui::testEntryPreviewSections()
     QVERIFY(!config()->get(Config::GUI_PreviewShowSections).toBool());
 }
 
+void TestGui::testGroupPreviewSections()
+{
+    auto* preview = m_dbWidget->findChild<EntryPreviewWidget*>("previewWidget");
+    QVERIFY(preview);
+    auto* tabs = preview->findChild<QTabWidget*>("groupTabWidget");
+    auto* general = preview->findChild<QWidget*>("groupGeneralTab");
+    auto* share = preview->findChild<QWidget*>("groupShareTab");
+    QVERIFY(tabs && general && share);
+
+    config()->set(Config::GUI_PreviewShowSections, true);
+
+    // Non-shared group: Share section has a disabled heading and no content
+    m_dbWidget->groupView()->setCurrentGroup(m_db->rootGroup()->children().first());
+    auto* sections = preview->findChild<QScrollArea*>("groupTabWidgetSections");
+    QVERIFY(sections);
+    QTRY_VERIFY(sections->isVisible());
+    QVERIFY(!tabs->isVisible());
+    QVERIFY(general->isVisible());
+    auto* shareHeading = preview->findChild<QLabel*>("groupShareTabHeading");
+    QVERIFY(shareHeading);
+    QVERIFY(shareHeading->isVisible());
+    QVERIFY(!shareHeading->isEnabled());
+    QVERIFY(!share->isVisible());
+
+    // Switching between entry and group previews keeps sections for both
+    auto* entry = new Entry();
+    entry->setUuid(QUuid::createUuid());
+    entry->setTitle("Sections Entry");
+    entry->setGroup(m_db->rootGroup());
+    m_dbWidget->groupView()->setCurrentGroup(m_db->rootGroup());
+    auto* entryView = m_dbWidget->findChild<EntryView*>("entryView");
+    entryView->setCurrentEntry(entry);
+    auto* entrySections = preview->findChild<QScrollArea*>("entryTabWidgetSections");
+    QTRY_VERIFY(entrySections->isVisible());
+    m_dbWidget->groupView()->setCurrentGroup(m_db->rootGroup()->children().first());
+    QTRY_VERIFY(sections->isVisible());
+    QVERIFY(!tabs->isVisible());
+
+    // Back to tabs: original order and titles
+    config()->set(Config::GUI_PreviewShowSections, false);
+    QVERIFY(tabs->isVisible());
+    QVERIFY(!sections->isVisible());
+    QCOMPARE(tabs->count(), 2);
+    QCOMPARE(tabs->widget(0), general);
+    QCOMPARE(tabs->widget(1), share);
+    QCOMPARE(tabs->tabText(0), QString("General"));
+    QVERIFY(!tabs->isTabEnabled(1));
+    QCOMPARE(tabs->currentIndex(), 0);
+}
+
 void TestGui::testMenuActionStates()
 {
     auto isActionEnabled = [this](const QString& actionName) -> bool {
