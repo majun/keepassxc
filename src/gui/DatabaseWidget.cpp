@@ -142,7 +142,7 @@ DatabaseWidget::DatabaseWidget(QSharedPointer<Database> db, QWidget* parent)
     rightHandSideVBox->setContentsMargins(0, 0, 0, 0);
     rightHandSideVBox->addWidget(m_searchingLabel);
     rightHandSideVBox->addWidget(m_shareLabel);
-    rightHandSideVBox->addWidget(m_previewSplitter);
+    rightHandSideVBox->addWidget(m_previewSplitter, 1);
     rightHandSideWidget->setLayout(rightHandSideVBox);
     m_entryView = new EntryView(rightHandSideWidget);
 
@@ -170,11 +170,14 @@ DatabaseWidget::DatabaseWidget(QSharedPointer<Database> db, QWidget* parent)
     m_searchingLabel->setObjectName("SearchBanner");
     m_searchingLabel->setText(tr("Searching…"));
     m_searchingLabel->setAlignment(Qt::AlignCenter);
+    // The banners must never take more height than their text needs
+    m_searchingLabel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Maximum);
     m_searchingLabel->setVisible(false);
 
     m_shareLabel->setObjectName("KeeShareBanner");
     m_shareLabel->setRawText(tr("Shared group…"));
     m_shareLabel->setAlignment(Qt::AlignCenter);
+    m_shareLabel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Maximum);
     m_shareLabel->setVisible(false);
 
     m_previewView->setObjectName("previewWidget");

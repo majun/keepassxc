@@ -774,6 +774,8 @@ void EntryPreviewWidget::setEntryListLayout(bool enabled)
                                               {gridItem(general, m_ui->horizontalLayout_3), 5, 1, 1, 5}});
         general->setRowStretch(3, 0);
         general->setRowStretch(5, 1);
+        // The URL column is empty now, so give all the width to the values
+        general->setColumnStretch(5, 0);
         m_advancedGridRestore = moveGridItems(advanced,
                                               {{gridItem(advanced, m_ui->attachmentsTitleLabel), 2, 0, 1, 1},
                                                {gridItem(advanced, m_ui->entryAttachmentsWidget), 3, 0, 1, 1}});
@@ -783,6 +785,7 @@ void EntryPreviewWidget::setEntryListLayout(bool enabled)
         m_generalGridRestore.clear();
         general->setRowStretch(5, 0);
         general->setRowStretch(3, 1);
+        general->setColumnStretch(5, 1);
         moveGridItems(advanced, m_advancedGridRestore);
         m_advancedGridRestore.clear();
         m_ui->entryAttributesTable->setMinimumHeight(0);
